@@ -1,4 +1,4 @@
-z-adv-path-up-down
+adv-path-up-down
 ==================
 
 Auto-path one Z-level up or down from your current Adventurer position by simulating one-step
@@ -9,7 +9,7 @@ Synopsis
 
 ::
 
-  z-adv-path-up-down
+  adv-path-up-down
 
 Usage
 -----
@@ -18,7 +18,7 @@ Run from the DFHack Lua console while in **Adventurer** mode:
 
 ::
 
-  [DFHack]# lua z-adv-path-up-down.lua
+  [DFHack]# lua adv-path-up-down.lua
 
 1. You’ll be prompted with **Up**, **Down**, or **Cancel**.
 2. Select **Up** to auto-path to the highest level above your current Z; **Down** to auto-path to the lowest level.
