@@ -216,4 +216,3 @@ if not dfhack.gui.matchFocusString('dwarfmode/Info/WORK_ORDERS/Default') then
 end
 
 overlay.overlay_command({'enable', 'order-search-filter.order_search_filter'})
-

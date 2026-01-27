@@ -22,5 +22,3 @@ Overlay
 When the Work Orders screen is open, press :kbd:`Alt`:kbd:`S` to focus the
 filter field. As you type, the list of work orders updates to show only the
 matching entries. Clearing the filter restores the full list.
-
-
