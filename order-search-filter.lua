@@ -1,13 +1,13 @@
 --@module = true
 --[====[
 
-gui/order-search-filter
+order-search-filter
 =======================
 Overlay search/filter panel for the manager work orders list.
 
 For manual testing, you can bind a hotkey in your ``dfhack*.init``::
 
-    keybinding add Alt+S@workquota gui/order-search-filter
+    keybinding add Alt+S@workquota order-search-filter
 
 ]====]
 
@@ -216,3 +216,4 @@ if not dfhack.gui.matchFocusString('dwarfmode/Info/WORK_ORDERS/Default') then
 end
 
 overlay.overlay_command({'enable', 'order-search-filter.order_search_filter'})
+
