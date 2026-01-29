@@ -235,7 +235,6 @@ end
 
 function OrderSearchFilter:overlay_ondisable()
     self:clear_filter()
-    self:restore_orders()
 end
 
 OVERLAY_WIDGETS = {
