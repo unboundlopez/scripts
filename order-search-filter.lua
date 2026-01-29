@@ -169,6 +169,7 @@ function OrderSearchFilter:restore_orders()
     end
     self:rebuild_orders(self.unfiltered_orders)
     self.unfiltered_orders = nil
+    self.last_filtered_ids = nil
 end
 
 function OrderSearchFilter:apply_filter(filter)
@@ -180,6 +181,27 @@ function OrderSearchFilter:apply_filter(filter)
         self.unfiltered_orders = self:snapshot_orders()
     end
     local filter_lc = filter:lower()
+    local current_ids = {}
+    for _, order in ipairs(orders) do
+        current_ids[order.id] = true
+    end
+    if self.last_filtered_ids then
+        local deleted_ids = {}
+        for id in pairs(self.last_filtered_ids) do
+            if not current_ids[id] then
+                deleted_ids[id] = true
+            end
+        end
+        if next(deleted_ids) then
+            local cleaned = {}
+            for _, order in ipairs(self.unfiltered_orders) do
+                if not deleted_ids[order.id] then
+                    table.insert(cleaned, order)
+                end
+            end
+            self.unfiltered_orders = cleaned
+        end
+    end
     local filtered = {}
     for _, order in ipairs(self.unfiltered_orders) do
         if order_matches(filter_lc, order) then
@@ -187,6 +209,10 @@ function OrderSearchFilter:apply_filter(filter)
         end
     end
     self:rebuild_orders(filtered)
+    self.last_filtered_ids = {}
+    for _, order in ipairs(filtered) do
+        self.last_filtered_ids[order.id] = true
+    end
 end
 
 function OrderSearchFilter:on_filter_change(text)
@@ -199,7 +225,16 @@ function OrderSearchFilter:onInput(keys)
     return OrderSearchFilter.super.onInput(self, keys)
 end
 
+function OrderSearchFilter:clear_filter()
+    local filter_view = self.subviews.filter
+    if filter_view then
+        filter_view:setText('')
+    end
+    self.filter_text = nil
+end
+
 function OrderSearchFilter:overlay_ondisable()
+    self:clear_filter()
     self:restore_orders()
 end
 
