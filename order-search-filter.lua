@@ -7,6 +7,19 @@ local ORDERS = df.global.world.manager_orders.all
 local ITEMDEFS = df.global.world.raws.itemdefs
 local REACTIONS = df.global.world.raws.reactions.reactions
 
+local JOBTYPE_ITEMDEF = {
+    [df.job_type.MakeArmor] = 'armor',
+    [df.job_type.MakeWeapon] = 'weapons',
+    [df.job_type.MakeShield] = 'shields',
+    [df.job_type.MakeAmmo] = 'ammo',
+    [df.job_type.MakeHelm] = 'helms',
+    [df.job_type.MakeGloves] = 'gloves',
+    [df.job_type.MakePants] = 'pants',
+    [df.job_type.MakeShoes] = 'shoes',
+    [df.job_type.MakeTool] = 'tools',
+    [df.job_type.MakeTrapComponent] = 'trapcomps',
+}
+
 -- ------------------------------------------------------------
 -- Matching
 -- ------------------------------------------------------------
@@ -18,29 +31,9 @@ local function safe_name(vec, idx)
 end
 
 local function get_item_subtype_name(order)
-    local jt = order.job_type
-    if jt == df.job_type.MakeArmor then
-        return safe_name(ITEMDEFS.armor, order.item_subtype)
-    elseif jt == df.job_type.MakeWeapon then
-        return safe_name(ITEMDEFS.weapons, order.item_subtype)
-    elseif jt == df.job_type.MakeShield then
-        return safe_name(ITEMDEFS.shields, order.item_subtype)
-    elseif jt == df.job_type.MakeAmmo then
-        return safe_name(ITEMDEFS.ammo, order.item_subtype)
-    elseif jt == df.job_type.MakeHelm then
-        return safe_name(ITEMDEFS.helms, order.item_subtype)
-    elseif jt == df.job_type.MakeGloves then
-        return safe_name(ITEMDEFS.gloves, order.item_subtype)
-    elseif jt == df.job_type.MakePants then
-        return safe_name(ITEMDEFS.pants, order.item_subtype)
-    elseif jt == df.job_type.MakeShoes then
-        return safe_name(ITEMDEFS.shoes, order.item_subtype)
-    elseif jt == df.job_type.MakeTool then
-        return safe_name(ITEMDEFS.tools, order.item_subtype)
-    elseif jt == df.job_type.MakeTrapComponent then
-        return safe_name(ITEMDEFS.trapcomps, order.item_subtype)
-    end
-    return ''
+    local key = JOBTYPE_ITEMDEF[order.job_type]
+    if not key then return '' end
+    return safe_name(ITEMDEFS[key], order.item_subtype)
 end
 
 local function get_reaction_name(order)
@@ -296,6 +289,7 @@ function OrderSearchFilter:clear_filter()
         self.pending_clear = true
     end
     self.filter_text = nil
+    self:restore_orders()
 end
 
 function OrderSearchFilter:overlay_ondisable()
