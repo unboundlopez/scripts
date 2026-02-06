@@ -166,16 +166,15 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   end
 
   local function openArenaSpawnScreen(dwarfmodeScreen)
-    local inputKeys = {
-      'D_LOOK_ARENA_CREATURE', -- classic/legacy keybinding
-      'D_LOOK_ARENA_CREATURE_STEAM', -- potential steam-specific token
-    }
+    local inputKeys = {'D_LOOK_ARENA_CREATURE', 'D_LOOK_ARENA_CREATURES'}
     for _, key in ipairs(inputKeys) do
-      local ok = pcall(gui.simulateInput, dwarfmodeScreen, key)
-      if ok then
-        local screen = dfhack.gui.getCurViewscreen()
-        if screen ~= dwarfmodeScreen then
-          return screen
+      if not df.interface_key or df.interface_key[key] ~= nil then
+        local ok = pcall(gui.simulateInput, dwarfmodeScreen, key)
+        if ok then
+          local screen = dfhack.gui.getCurViewscreen()
+          if screen ~= dwarfmodeScreen then
+            return screen
+          end
         end
       end
     end
