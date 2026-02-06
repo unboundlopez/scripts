@@ -1181,12 +1181,14 @@ local function showCreateUnitInterface()
       local race = raceChoices[raceIdx]
       if not race then return end
       local castes = {}
+      local casteChoices = {}
       for _, caste in ipairs(race.caste) do
+        table.insert(casteChoices, caste)
         table.insert(castes, caste.caste_id)
       end
       dialogs.showListPrompt('Create Unit', ('Choose caste for %s'):format(race.creature_id), COLOR_WHITE, castes,
         function(casteIdx)
-          local caste = race.caste[casteIdx]
+          local caste = casteChoices[casteIdx]
           if not caste then return end
           local pos = getCursorSpawnPos()
           createUnit(race.creature_id, caste.caste_id, pos)
