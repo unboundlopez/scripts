@@ -196,14 +196,18 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     return ok and ret ~= nil
   end
 
-  local function safeInsert(vec, idx, value)
-    local ok = dfhack.pcall(function() vec:insert(idx, value) end)
-    return ok
+  local function mustInsert(vec, idx, value, label)
+    local ok, err = dfhack.pcall(function() vec:insert(idx, value) end)
+    if not ok then
+      qerror(('Unable to write arena spawn %s data: %s'):format(label, tostring(err)))
+    end
   end
 
-  local function safeErase(vec, idx)
-    local ok = dfhack.pcall(function() vec:erase(idx) end)
-    return ok
+  local function mustErase(vec, idx, label)
+    local ok, err = dfhack.pcall(function() vec:erase(idx) end)
+    if not ok then
+      qerror(('Unable to restore arena spawn %s data: %s'):format(label, tostring(err)))
+    end
   end
 
   local oldSpawnType
@@ -289,11 +293,11 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     qerror('Arena spawn data is missing one or more required lists (race/caste/creature_cnt) in this DF/DFHack build.')
   end
 
-  safeInsert(arenaSpawn.race, 0, race_id) -- place at index 0 to allow for straightforward selection as described above. The rest of the list need not be cleared.
+  mustInsert(arenaSpawn.race, 0, race_id, 'race') -- place at index 0 to allow for straightforward selection as described above. The rest of the list need not be cleared.
   if caste_id then
-    safeInsert(arenaSpawn.caste, 0, caste_id) -- if not specificied, caste_id is randomly selected and inserted during the spawn loop below, as otherwise creating multiple creatures simultaneously would result in them all being of the same caste.
+    mustInsert(arenaSpawn.caste, 0, caste_id, 'caste') -- if not specificied, caste_id is randomly selected and inserted during the spawn loop below, as otherwise creating multiple creatures simultaneously would result in them all being of the same caste.
   end
-  safeInsert(arenaSpawn.creature_cnt, '#', 0)
+  mustInsert(arenaSpawn.creature_cnt, '#', 0, 'creature count')
 
   local curViewscreen = dfhack.gui.getCurViewscreen()
   local dwarfmodeScreen = df.viewscreen_dwarfmodest:new() -- the viewscreen present in arena "overseer" mode
@@ -330,7 +334,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   local createdUnits = {}
   for n = 1, spawnNumber do -- loop here to avoid having to handle spawn data each time when creating multiple units
     if not caste_id then -- choose a random caste ID each time
-      safeInsert(arenaSpawn.caste, 0, caste_id_choices[math.random(1, #caste_id_choices)])
+      mustInsert(arenaSpawn.caste, 0, caste_id_choices[math.random(1, #caste_id_choices)], 'caste')
     end
 
     if locationChoices then
@@ -359,7 +363,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     gui.simulateInput(spawnScreen, 'SELECT') -- create the selected creature
 
     if not caste_id then
-      safeErase(arenaSpawn.caste, 0)
+      mustErase(arenaSpawn.caste, 0, 'caste')
     end
 
 --  Process the created unit:
@@ -376,11 +380,11 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
 
 -- Restore arena spawn data:
 
-  safeErase(arenaSpawn.race, 0)
+  mustErase(arenaSpawn.race, 0, 'race')
   if caste_id then
-    safeErase(arenaSpawn.caste, 0)
+    mustErase(arenaSpawn.caste, 0, 'caste')
   end
-  safeErase(arenaSpawn.creature_cnt, 0)
+  mustErase(arenaSpawn.creature_cnt, 0, 'creature count')
 
   if oldSpawnFilter ~= nil then setArenaField('filter', oldSpawnFilter) end
   if oldSpawnType ~= nil then setArenaField('type', oldSpawnType) end
