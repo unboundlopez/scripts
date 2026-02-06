@@ -183,27 +183,38 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     qerror('Could not access Steam arena data (world.arena).')
   end
 
-  local oldSpawnType = arenaSpawn.type
-  if arenaSpawn.type ~= nil then
-    arenaSpawn.type = 0 -- selects the creature at index 0 when the arena spawn screen is produced
+  local function safeGetField(obj, field)
+    local ok, val = pcall(function() return obj[field] end)
+    if ok then return val, true end
+    return nil, false
   end
-  local oldSpawnFilter = arenaSpawn.filter
-  if arenaSpawn.filter ~= nil then
-    arenaSpawn.filter = "" -- clear filter to prevent it from messing with the selection
+
+  local function safeSetField(obj, field, value)
+    local ok = pcall(function() obj[field] = value end)
+    return ok
+  end
+
+  local oldSpawnType, hasSpawnType = safeGetField(arenaSpawn, 'type')
+  if hasSpawnType then
+    safeSetField(arenaSpawn, 'type', 0) -- selects the creature at index 0 when the arena spawn screen is produced
+  end
+  local oldSpawnFilter, hasSpawnFilter = safeGetField(arenaSpawn, 'filter')
+  if hasSpawnFilter then
+    safeSetField(arenaSpawn, 'filter', "") -- clear filter to prevent it from messing with the selection
   end
 
 -- Clear arena spawn data to avoid interference:
 
-  local oldInteractionEffect = arenaSpawn.interaction
-  if arenaSpawn.interaction ~= nil then
-    arenaSpawn.interaction = -1
+  local oldInteractionEffect, hasInteraction = safeGetField(arenaSpawn, 'interaction')
+  if hasInteraction then
+    safeSetField(arenaSpawn, 'interaction', -1)
   end
-  local oldSpawnTame = arenaSpawn.tame
-  if arenaSpawn.tame ~= nil then
-    arenaSpawn.tame = 0 -- NotTame in Steam arena layouts
+  local oldSpawnTame, hasSpawnTame = safeGetField(arenaSpawn, 'tame')
+  if hasSpawnTame then
+    safeSetField(arenaSpawn, 'tame', 0) -- NotTame in Steam arena layouts
   end
 
-  local equipment = arenaSpawn.equipment or arenaSpawn
+  local equipment = select(1, safeGetField(arenaSpawn, 'equipment')) or arenaSpawn
   local hasLegacyEquipmentVectors = equipment.item_types and equipment.item_subtypes and equipment.item_materials and equipment.item_counts
   local hasSkillVectors = equipment.skills and equipment.skill_levels
   if equipDetails and not hasLegacyEquipmentVectors then
@@ -262,10 +273,10 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
 -- Spawn the creature:
 
   arenaSpawn.race:insert(0, race_id) -- place at index 0 to allow for straightforward selection as described above. The rest of the list need not be cleared.
-  if arenaSpawn.last_race ~= nil then arenaSpawn.last_race = race_id end
+  safeSetField(arenaSpawn, 'last_race', race_id)
   if caste_id then
     arenaSpawn.caste:insert(0, caste_id) -- if not specificied, caste_id is randomly selected and inserted during the spawn loop below, as otherwise creating multiple creatures simultaneously would result in them all being of the same caste.
-    if arenaSpawn.last_caste ~= nil then arenaSpawn.last_caste = caste_id end
+    safeSetField(arenaSpawn, 'last_caste', caste_id)
   end
   arenaSpawn.creature_cnt:insert('#', 0)
 
@@ -315,10 +326,10 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     end
     arenaSpawn.creature_cnt:erase(0)
 
-    if arenaSpawn.filter ~= nil then arenaSpawn.filter = oldSpawnFilter end
-    if arenaSpawn.type ~= nil then arenaSpawn.type = oldSpawnType end
-    if arenaSpawn.interaction ~= nil then arenaSpawn.interaction = oldInteractionEffect end
-    if arenaSpawn.tame ~= nil then arenaSpawn.tame = oldSpawnTame end
+    if hasSpawnFilter then safeSetField(arenaSpawn, 'filter', oldSpawnFilter) end
+    if hasSpawnType then safeSetField(arenaSpawn, 'type', oldSpawnType) end
+    if hasInteraction then safeSetField(arenaSpawn, 'interaction', oldInteractionEffect) end
+    if hasSpawnTame then safeSetField(arenaSpawn, 'tame', oldSpawnTame) end
 
     if equipDetails and hasLegacyEquipmentVectors then
       equipment.item_types:resize(0)
@@ -1107,6 +1118,8 @@ if moduleMode then
   return
 end
 
+local rawArgs = {...}
+
 local function normalizeCliArgs(argv)
   local out = {}
   local i = 1
@@ -1133,15 +1146,60 @@ local function normalizeCliArgs(argv)
   return out
 end
 
-local args = utils.processArgs(normalizeCliArgs({...}), validArgs)
+local args = utils.processArgs(normalizeCliArgs(rawArgs), validArgs)
 
 if args.help then
   print(dfhack.script_help())
   return
 end
 
+local function getCursorSpawnPos()
+  local cursor = df.global.cursor
+  local pos = {x=cursor.x, y=cursor.y, z=cursor.z}
+  if dfhack.maps.isValidTilePos(pos) then
+    return pos
+  end
+  qerror('Place the keyboard cursor on a valid tile before using the create-unit interface.')
+end
+
+local function showCreateUnitInterface()
+  local dialogs = require('gui.dialogs')
+  local races = {}
+  local raceChoices = {}
+  for _, cre in ipairs(df.global.world.raws.creatures.all) do
+    if not cre.flags.DOES_NOT_EXIST and #cre.caste > 0 then
+      table.insert(raceChoices, cre)
+    end
+  end
+  table.sort(raceChoices, function(a,b) return a.creature_id < b.creature_id end)
+  for _, cre in ipairs(raceChoices) do
+    table.insert(races, cre.creature_id)
+  end
+
+  dialogs.showListPrompt('Create Unit', 'Choose race', COLOR_WHITE, races,
+    function(raceIdx)
+      local race = raceChoices[raceIdx]
+      if not race then return end
+      local castes = {}
+      for _, caste in ipairs(race.caste) do
+        table.insert(castes, caste.caste_id)
+      end
+      dialogs.showListPrompt('Create Unit', ('Choose caste for %s'):format(race.creature_id), COLOR_WHITE, castes,
+        function(casteIdx)
+          local caste = race.caste[casteIdx]
+          if not caste then return end
+          local pos = getCursorSpawnPos()
+          createUnit(race.creature_id, caste.caste_id, pos)
+        end)
+    end)
+end
+
 if not args.race then
-  qerror('Specify a race for the new unit.')
+  if #rawArgs == 0 then
+    showCreateUnitInterface()
+    return
+  end
+  qerror('Specify a race for the new unit, or run without arguments to use the interface.')
 end
 
 local function parseVectorArg(value, name, allowTwo)
