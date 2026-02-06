@@ -1074,6 +1074,7 @@ local validArgs = utils.invert({
   'name',
   'nick',
   'location',
+  'cursor',
   'age',
   'setUnitToFort', -- added by amostubal to get past an issue with \\LOCAL
   'quantity',
@@ -1101,10 +1102,29 @@ if not args.race then
   qerror('Specify a race for the new unit.')
 end
 
-if not args.location then
-  qerror('Location not specified!')
+local function getSpawnPosition(args)
+  local cursor = df.global.cursor
+  local cursorPos = {x = cursor.x, y = cursor.y, z = cursor.z}
+
+  if args.cursor then
+    if dfhack.maps.isValidTilePos(cursorPos) then
+      return cursorPos
+    end
+    qerror('Invalid keyboard cursor position! Move the keyboard cursor to a valid tile first.')
+  end
+
+  if args.location then
+    return {x = tonumber(args.location[1]), y = tonumber(args.location[2]), z = tonumber(args.location[3])}
+  end
+
+  if dfhack.maps.isValidTilePos(cursorPos) then
+    return cursorPos
+  end
+
+  qerror('Location not specified! Use -location x y z, or use -cursor/place the keyboard cursor over a valid tile.')
 end
-local pos = {x = tonumber(args.location[1]), y = tonumber(args.location[2]), z = tonumber(args.location[3])}
+
+local pos = getSpawnPosition(args)
 
 if args.locationType and not args.locationRange then
   qerror("-locationType cannot be used without -locationRange!")
