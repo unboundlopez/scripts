@@ -155,15 +155,6 @@ end
 function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoices, locationType, age, domesticate, civ_id, group_id, entityRawName, nickname, vanishDelay, equipDetails, skillDetails, profession, customProfession, flagSet, flagClear, spawnNumber)
   local gui = require 'gui'
 
-  local function getArenaNotTameValue()
-    if df.world and df.world.T_arena_spawn and df.world.T_arena_spawn.T_tame then
-      return df.world.T_arena_spawn.T_tame.NotTame
-    end
-    if df.arena_spawn_tame and df.arena_spawn_tame.NotTame then
-      return df.arena_spawn_tame.NotTame
-    end
-    return 0
-  end
 
   local function openArenaSpawnScreen(dwarfmodeScreen)
     local inputKeys = {'D_LOOK_ARENA_CREATURE', 'D_LOOK_ARENA_CREATURES'}
@@ -187,9 +178,9 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   local cursor = copyall(df.global.cursor)
 
   local isArena = dfhack.world.isArena()
-  local arenaSpawn = df.global.world.arena_spawn or df.global.world.arena
+  local arenaSpawn = df.global.world.arena
   if not arenaSpawn then
-    qerror('Could not access arena spawn data (world.arena_spawn/world.arena are unavailable).')
+    qerror('Could not access Steam arena data (world.arena).')
   end
 
   local oldSpawnType = arenaSpawn.type
@@ -209,7 +200,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   end
   local oldSpawnTame = arenaSpawn.tame
   if arenaSpawn.tame ~= nil then
-    arenaSpawn.tame = getArenaNotTameValue() -- prevent interference by the tame/mountable setting (which isn't particularly useful as it only appears to set unit.flags1.tame)
+    arenaSpawn.tame = 0 -- NotTame in Steam arena layouts
   end
 
   local equipment = arenaSpawn.equipment or arenaSpawn
