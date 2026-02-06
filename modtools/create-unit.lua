@@ -161,75 +161,139 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   local cursor = copyall(df.global.cursor)
 
   local isArena = dfhack.world.isArena()
-  local arenaSpawn = df.global.world.arena_spawn
+
+  local world = df.global.world
+  local function hasWorldField(field)
+    local ok, ret = dfhack.pcall(function()
+      return world:_field(field)
+    end)
+    return ok and ret ~= nil
+  end
+
+  local arenaSpawn
+  if hasWorldField('arena_spawn') then
+    arenaSpawn = world.arena_spawn
+  elseif hasWorldField('arena') then
+    arenaSpawn = world.arena
+  else
+    qerror('Unable to access arena spawn data (tried world.arena_spawn and world.arena).')
+  end
+
+  local function getArenaField(field)
+    local ok, value = dfhack.pcall(function() return arenaSpawn[field] end)
+    if ok then return value end
+  end
+
+  local function setArenaField(field, value)
+    local ok = dfhack.pcall(function() arenaSpawn[field] = value end)
+    return ok
+  end
+
+  local function hasArenaField(field)
+    local ok, ret = dfhack.pcall(function()
+      return arenaSpawn:_field(field)
+    end)
+    return ok and ret ~= nil
+  end
+
+  local function safeInsert(vec, idx, value)
+    local ok = dfhack.pcall(function() vec:insert(idx, value) end)
+    return ok
+  end
+
+  local function safeErase(vec, idx)
+    local ok = dfhack.pcall(function() vec:erase(idx) end)
+    return ok
+  end
 
   local oldSpawnType
   local oldSpawnFilter
-  oldSpawnType = arenaSpawn.type
-  arenaSpawn.type = 0 -- selects the creature at index 0 when the arena spawn screen is produced
-  oldSpawnFilter = arenaSpawn.filter
-  arenaSpawn.filter = "" -- clear filter to prevent it from messing with the selection
+  oldSpawnType = getArenaField('type')
+  setArenaField('type', 0) -- selects the creature at index 0 when the arena spawn screen is produced
+  oldSpawnFilter = getArenaField('filter')
+  setArenaField('filter', "") -- clear filter to prevent it from messing with the selection
 
 -- Clear arena spawn data to avoid interference:
 
   local oldInteractionEffect
-  oldInteractionEffect = arenaSpawn.interaction
-  arenaSpawn.interaction = -1
+  oldInteractionEffect = getArenaField('interaction')
+  setArenaField('interaction', -1)
   local oldSpawnTame
-  oldSpawnTame = arenaSpawn.tame
-  arenaSpawn.tame = df.world.T_arena_spawn.T_tame.NotTame -- prevent interference by the tame/mountable setting (which isn't particularly useful as it only appears to set unit.flags1.tame)
+  oldSpawnTame = getArenaField('tame')
+  local okArenaTameEnum, arenaTameEnum = dfhack.pcall(function() return df.world.T_arena_spawn.T_tame.NotTame end)
+  if okArenaTameEnum then
+    setArenaField('tame', arenaTameEnum) -- prevent interference by the tame/mountable setting (which isn't particularly useful as it only appears to set unit.flags1.tame)
+  end
 
-  local equipment = arenaSpawn.equipment
+  local equipment = getArenaField('equipment')
 
   local old_item_types = {} --as:df.item_type[]
-  for _, item_type in pairs(equipment.item_types) do
-    table.insert(old_item_types, item_type)
+  if equipment then
+    for _, item_type in pairs(equipment.item_types) do
+      table.insert(old_item_types, item_type)
+    end
+    equipment.item_types:resize(0)
   end
-  equipment.item_types:resize(0)
 
   local old_item_subtypes = {} --as:number[]
-  for _, item_subtype in pairs(equipment.item_subtypes) do
-    table.insert(old_item_subtypes, item_subtype)
+  if equipment then
+    for _, item_subtype in pairs(equipment.item_subtypes) do
+      table.insert(old_item_subtypes, item_subtype)
+    end
+    equipment.item_subtypes:resize(0)
   end
-  equipment.item_subtypes:resize(0)
 
   local old_item_mat_types = {} --as:number[]
-  for _, item_mat_type in pairs(equipment.item_materials.mat_type) do
-    table.insert(old_item_mat_types, item_mat_type)
+  if equipment then
+    for _, item_mat_type in pairs(equipment.item_materials.mat_type) do
+      table.insert(old_item_mat_types, item_mat_type)
+    end
+    equipment.item_materials.mat_type:resize(0)
   end
-  equipment.item_materials.mat_type:resize(0)
 
   local old_item_mat_indexes = {} --as:number[]
-  for _, item_mat_index in pairs(equipment.item_materials.mat_index) do
-    table.insert(old_item_mat_indexes, item_mat_index)
+  if equipment then
+    for _, item_mat_index in pairs(equipment.item_materials.mat_index) do
+      table.insert(old_item_mat_indexes, item_mat_index)
+    end
+    equipment.item_materials.mat_index:resize(0)
   end
-  equipment.item_materials.mat_index:resize(0)
 
   local old_item_counts = {} --as:number[]
-  for _, item_count in pairs(equipment.item_counts) do
-    table.insert(old_item_counts, item_count)
+  if equipment then
+    for _, item_count in pairs(equipment.item_counts) do
+      table.insert(old_item_counts, item_count)
+    end
+    equipment.item_counts:resize(0)
   end
-  equipment.item_counts:resize(0)
 
   local old_skills = {} --as:number[]
-  for _, skill in ipairs(equipment.skills) do
-    table.insert(old_skills, skill)
+  if equipment then
+    for _, skill in ipairs(equipment.skills) do
+      table.insert(old_skills, skill)
+    end
+    equipment.skills:resize(0)
   end
-  equipment.skills:resize(0)
 
   local old_skill_levels = {} --as:number[]
-  for _, skill_level in ipairs(equipment.skill_levels) do
-    table.insert(old_skill_levels, skill_level)
+  if equipment then
+    for _, skill_level in ipairs(equipment.skill_levels) do
+      table.insert(old_skill_levels, skill_level)
+    end
+    equipment.skill_levels:resize(0)
   end
-  equipment.skill_levels:resize(0)
 
 -- Spawn the creature:
 
-  arenaSpawn.race:insert(0, race_id) -- place at index 0 to allow for straightforward selection as described above. The rest of the list need not be cleared.
-  if caste_id then
-    arenaSpawn.caste:insert(0, caste_id) -- if not specificied, caste_id is randomly selected and inserted during the spawn loop below, as otherwise creating multiple creatures simultaneously would result in them all being of the same caste.
+  if not hasArenaField('race') or not hasArenaField('caste') or not hasArenaField('creature_cnt') then
+    qerror('Arena spawn data is missing one or more required lists (race/caste/creature_cnt) in this DF/DFHack build.')
   end
-  arenaSpawn.creature_cnt:insert('#', 0)
+
+  safeInsert(arenaSpawn.race, 0, race_id) -- place at index 0 to allow for straightforward selection as described above. The rest of the list need not be cleared.
+  if caste_id then
+    safeInsert(arenaSpawn.caste, 0, caste_id) -- if not specificied, caste_id is randomly selected and inserted during the spawn loop below, as otherwise creating multiple creatures simultaneously would result in them all being of the same caste.
+  end
+  safeInsert(arenaSpawn.creature_cnt, '#', 0)
 
   local curViewscreen = dfhack.gui.getCurViewscreen()
   local dwarfmodeScreen = df.viewscreen_dwarfmodest:new() -- the viewscreen present in arena "overseer" mode
@@ -246,7 +310,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     df.global.cursor.z = tonumber(pos.z)
   end
 
-  if equipDetails then
+  if equipDetails and equipment then
     for _, equip in ipairs(equipDetails) do
       equipment.item_types:insert('#', equip.itemType)
       equipment.item_subtypes:insert('#', equip.subType)
@@ -256,7 +320,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     end
   end
 
-  if skillDetails then
+  if skillDetails and equipment then
     for _, skill in ipairs(skillDetails) do
       equipment.skills:insert('#', skill.skill)
       equipment.skill_levels:insert('#', skill.level)
@@ -266,7 +330,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   local createdUnits = {}
   for n = 1, spawnNumber do -- loop here to avoid having to handle spawn data each time when creating multiple units
     if not caste_id then -- choose a random caste ID each time
-      arenaSpawn.caste:insert(0, caste_id_choices[math.random(1, #caste_id_choices)])
+      safeInsert(arenaSpawn.caste, 0, caste_id_choices[math.random(1, #caste_id_choices)])
     end
 
     if locationChoices then
@@ -295,7 +359,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     gui.simulateInput(spawnScreen, 'SELECT') -- create the selected creature
 
     if not caste_id then
-      arenaSpawn.caste:erase(0)
+      safeErase(arenaSpawn.caste, 0)
     end
 
 --  Process the created unit:
@@ -312,18 +376,18 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
 
 -- Restore arena spawn data:
 
-  arenaSpawn.race:erase(0)
+  safeErase(arenaSpawn.race, 0)
   if caste_id then
-    arenaSpawn.caste:erase(0)
+    safeErase(arenaSpawn.caste, 0)
   end
-  arenaSpawn.creature_cnt:erase(0)
+  safeErase(arenaSpawn.creature_cnt, 0)
 
-  arenaSpawn.filter = oldSpawnFilter
-  arenaSpawn.type = oldSpawnType
-  arenaSpawn.interaction = oldInteractionEffect
-  arenaSpawn.tame = oldSpawnTame
+  if oldSpawnFilter ~= nil then setArenaField('filter', oldSpawnFilter) end
+  if oldSpawnType ~= nil then setArenaField('type', oldSpawnType) end
+  if oldInteractionEffect ~= nil then setArenaField('interaction', oldInteractionEffect) end
+  if oldSpawnTame ~= nil then setArenaField('tame', oldSpawnTame) end
 
-  if equipDetails then
+  if equipDetails and equipment then
     equipment.item_types:resize(0)
     equipment.item_subtypes:resize(0)
     equipment.item_materials.mat_type:resize(0)
@@ -331,31 +395,33 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     equipment.item_counts:resize(0)
   end
 
-  if skillDetails then
+  if skillDetails and equipment then
     equipment.skills:resize(0)
     equipment.skill_levels:resize(0)
   end
 
-  for _,i in pairs(old_item_types) do
-    equipment.item_types:insert('#',i)
-  end
-  for _,i in pairs(old_item_subtypes) do
-    equipment.item_subtypes:insert('#',i)
-  end
-  for _,i in pairs(old_item_mat_types) do
-    equipment.item_materials.mat_type:insert('#',i)
-  end
-  for _,i in pairs(old_item_mat_indexes) do
-    equipment.item_materials.mat_index:insert('#',i)
-  end
-  for _,i in pairs(old_item_counts) do
-    equipment.item_counts:insert('#',i)
-  end
-  for _,i in ipairs(old_skills) do
-    equipment.skills:insert('#',i)
-  end
-  for _,i in ipairs(old_skill_levels) do
-    equipment.skill_levels:insert('#',i)
+  if equipment then
+    for _,i in pairs(old_item_types) do
+      equipment.item_types:insert('#',i)
+    end
+    for _,i in pairs(old_item_subtypes) do
+      equipment.item_subtypes:insert('#',i)
+    end
+    for _,i in pairs(old_item_mat_types) do
+      equipment.item_materials.mat_type:insert('#',i)
+    end
+    for _,i in pairs(old_item_mat_indexes) do
+      equipment.item_materials.mat_index:insert('#',i)
+    end
+    for _,i in pairs(old_item_counts) do
+      equipment.item_counts:insert('#',i)
+    end
+    for _,i in ipairs(old_skills) do
+      equipment.skills:insert('#',i)
+    end
+    for _,i in ipairs(old_skill_levels) do
+      equipment.skill_levels:insert('#',i)
+    end
   end
 
   return createdUnits -- table containing the created unit(s) (intended for module usage)
