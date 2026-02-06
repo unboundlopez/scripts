@@ -183,38 +183,13 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     qerror('Could not access Steam arena data (world.arena).')
   end
 
-  local function safeGetField(obj, field)
-    local ok, val = pcall(function() return obj[field] end)
-    if ok then return val, true end
-    return nil, false
-  end
 
-  local function safeSetField(obj, field, value)
-    local ok = pcall(function() obj[field] = value end)
-    return ok
-  end
+  -- Steam-only: do not touch optional arena fields (type/filter/interaction/tame),
+  -- since they are absent or reshaped across releases.
 
-  local oldSpawnType, hasSpawnType = safeGetField(arenaSpawn, 'type')
-  if hasSpawnType then
-    safeSetField(arenaSpawn, 'type', 0) -- selects the creature at index 0 when the arena spawn screen is produced
-  end
-  local oldSpawnFilter, hasSpawnFilter = safeGetField(arenaSpawn, 'filter')
-  if hasSpawnFilter then
-    safeSetField(arenaSpawn, 'filter', "") -- clear filter to prevent it from messing with the selection
-  end
 
--- Clear arena spawn data to avoid interference:
 
-  local oldInteractionEffect, hasInteraction = safeGetField(arenaSpawn, 'interaction')
-  if hasInteraction then
-    safeSetField(arenaSpawn, 'interaction', -1)
-  end
-  local oldSpawnTame, hasSpawnTame = safeGetField(arenaSpawn, 'tame')
-  if hasSpawnTame then
-    safeSetField(arenaSpawn, 'tame', 0) -- NotTame in Steam arena layouts
-  end
-
-  local equipment = select(1, safeGetField(arenaSpawn, 'equipment')) or arenaSpawn
+  local equipment = arenaSpawn.equipment or arenaSpawn
   local hasLegacyEquipmentVectors = equipment.item_types and equipment.item_subtypes and equipment.item_materials and equipment.item_counts
   local hasSkillVectors = equipment.skills and equipment.skill_levels
   if equipDetails and not hasLegacyEquipmentVectors then
@@ -273,10 +248,8 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
 -- Spawn the creature:
 
   arenaSpawn.race:insert(0, race_id) -- place at index 0 to allow for straightforward selection as described above. The rest of the list need not be cleared.
-  safeSetField(arenaSpawn, 'last_race', race_id)
   if caste_id then
     arenaSpawn.caste:insert(0, caste_id) -- if not specificied, caste_id is randomly selected and inserted during the spawn loop below, as otherwise creating multiple creatures simultaneously would result in them all being of the same caste.
-    safeSetField(arenaSpawn, 'last_caste', caste_id)
   end
   arenaSpawn.creature_cnt:insert('#', 0)
 
@@ -325,11 +298,6 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
       arenaSpawn.caste:erase(0)
     end
     arenaSpawn.creature_cnt:erase(0)
-
-    if hasSpawnFilter then safeSetField(arenaSpawn, 'filter', oldSpawnFilter) end
-    if hasSpawnType then safeSetField(arenaSpawn, 'type', oldSpawnType) end
-    if hasInteraction then safeSetField(arenaSpawn, 'interaction', oldInteractionEffect) end
-    if hasSpawnTame then safeSetField(arenaSpawn, 'tame', oldSpawnTame) end
 
     if equipDetails and hasLegacyEquipmentVectors then
       equipment.item_types:resize(0)
