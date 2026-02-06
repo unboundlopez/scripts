@@ -187,73 +187,94 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   local cursor = copyall(df.global.cursor)
 
   local isArena = dfhack.world.isArena()
-  local arenaSpawn = df.global.world.arena_spawn
+  local arenaSpawn = df.global.world.arena_spawn or df.global.world.arena
+  if not arenaSpawn then
+    qerror('Could not access arena spawn data (world.arena_spawn/world.arena are unavailable).')
+  end
 
-  local oldSpawnType
-  local oldSpawnFilter
-  oldSpawnType = arenaSpawn.type
-  arenaSpawn.type = 0 -- selects the creature at index 0 when the arena spawn screen is produced
-  oldSpawnFilter = arenaSpawn.filter
-  arenaSpawn.filter = "" -- clear filter to prevent it from messing with the selection
+  local oldSpawnType = arenaSpawn.type
+  if arenaSpawn.type ~= nil then
+    arenaSpawn.type = 0 -- selects the creature at index 0 when the arena spawn screen is produced
+  end
+  local oldSpawnFilter = arenaSpawn.filter
+  if arenaSpawn.filter ~= nil then
+    arenaSpawn.filter = "" -- clear filter to prevent it from messing with the selection
+  end
 
 -- Clear arena spawn data to avoid interference:
 
-  local oldInteractionEffect
-  oldInteractionEffect = arenaSpawn.interaction
-  arenaSpawn.interaction = -1
-  local oldSpawnTame
-  oldSpawnTame = arenaSpawn.tame
-  arenaSpawn.tame = getArenaNotTameValue() -- prevent interference by the tame/mountable setting (which isn't particularly useful as it only appears to set unit.flags1.tame)
+  local oldInteractionEffect = arenaSpawn.interaction
+  if arenaSpawn.interaction ~= nil then
+    arenaSpawn.interaction = -1
+  end
+  local oldSpawnTame = arenaSpawn.tame
+  if arenaSpawn.tame ~= nil then
+    arenaSpawn.tame = getArenaNotTameValue() -- prevent interference by the tame/mountable setting (which isn't particularly useful as it only appears to set unit.flags1.tame)
+  end
 
-  local equipment = arenaSpawn.equipment
+  local equipment = arenaSpawn.equipment or arenaSpawn
+  local hasLegacyEquipmentVectors = equipment.item_types and equipment.item_subtypes and equipment.item_materials and equipment.item_counts
+  local hasSkillVectors = equipment.skills and equipment.skill_levels
+  if equipDetails and not hasLegacyEquipmentVectors then
+    qerror('This DF/DFHack build uses modern arena data layouts that do not support -equip in modtools/create-unit yet.')
+  end
+  if skillDetails and not hasSkillVectors then
+    qerror('This DF/DFHack build does not expose arena skill vectors needed for -skills in modtools/create-unit.')
+  end
 
   local old_item_types = {} --as:df.item_type[]
-  for _, item_type in pairs(equipment.item_types) do
-    table.insert(old_item_types, item_type)
-  end
-  equipment.item_types:resize(0)
-
   local old_item_subtypes = {} --as:number[]
-  for _, item_subtype in pairs(equipment.item_subtypes) do
-    table.insert(old_item_subtypes, item_subtype)
-  end
-  equipment.item_subtypes:resize(0)
-
   local old_item_mat_types = {} --as:number[]
-  for _, item_mat_type in pairs(equipment.item_materials.mat_type) do
-    table.insert(old_item_mat_types, item_mat_type)
-  end
-  equipment.item_materials.mat_type:resize(0)
-
   local old_item_mat_indexes = {} --as:number[]
-  for _, item_mat_index in pairs(equipment.item_materials.mat_index) do
-    table.insert(old_item_mat_indexes, item_mat_index)
-  end
-  equipment.item_materials.mat_index:resize(0)
-
   local old_item_counts = {} --as:number[]
-  for _, item_count in pairs(equipment.item_counts) do
-    table.insert(old_item_counts, item_count)
+  if hasLegacyEquipmentVectors then
+    for _, item_type in pairs(equipment.item_types) do
+      table.insert(old_item_types, item_type)
+    end
+    equipment.item_types:resize(0)
+
+    for _, item_subtype in pairs(equipment.item_subtypes) do
+      table.insert(old_item_subtypes, item_subtype)
+    end
+    equipment.item_subtypes:resize(0)
+
+    for _, item_mat_type in pairs(equipment.item_materials.mat_type) do
+      table.insert(old_item_mat_types, item_mat_type)
+    end
+    equipment.item_materials.mat_type:resize(0)
+
+    for _, item_mat_index in pairs(equipment.item_materials.mat_index) do
+      table.insert(old_item_mat_indexes, item_mat_index)
+    end
+    equipment.item_materials.mat_index:resize(0)
+
+    for _, item_count in pairs(equipment.item_counts) do
+      table.insert(old_item_counts, item_count)
+    end
+    equipment.item_counts:resize(0)
   end
-  equipment.item_counts:resize(0)
 
   local old_skills = {} --as:number[]
-  for _, skill in ipairs(equipment.skills) do
-    table.insert(old_skills, skill)
-  end
-  equipment.skills:resize(0)
-
   local old_skill_levels = {} --as:number[]
-  for _, skill_level in ipairs(equipment.skill_levels) do
-    table.insert(old_skill_levels, skill_level)
+  if hasSkillVectors then
+    for _, skill in ipairs(equipment.skills) do
+      table.insert(old_skills, skill)
+    end
+    equipment.skills:resize(0)
+
+    for _, skill_level in ipairs(equipment.skill_levels) do
+      table.insert(old_skill_levels, skill_level)
+    end
+    equipment.skill_levels:resize(0)
   end
-  equipment.skill_levels:resize(0)
 
 -- Spawn the creature:
 
   arenaSpawn.race:insert(0, race_id) -- place at index 0 to allow for straightforward selection as described above. The rest of the list need not be cleared.
+  if arenaSpawn.last_race ~= nil then arenaSpawn.last_race = race_id end
   if caste_id then
     arenaSpawn.caste:insert(0, caste_id) -- if not specificied, caste_id is randomly selected and inserted during the spawn loop below, as otherwise creating multiple creatures simultaneously would result in them all being of the same caste.
+    if arenaSpawn.last_caste ~= nil then arenaSpawn.last_caste = caste_id end
   end
   arenaSpawn.creature_cnt:insert('#', 0)
 
@@ -272,7 +293,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     df.global.cursor.z = tonumber(pos.z)
   end
 
-  if equipDetails then
+  if equipDetails and hasLegacyEquipmentVectors then
     for _, equip in ipairs(equipDetails) do
       equipment.item_types:insert('#', equip.itemType)
       equipment.item_subtypes:insert('#', equip.subType)
@@ -282,7 +303,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     end
   end
 
-  if skillDetails then
+  if skillDetails and hasSkillVectors then
     for _, skill in ipairs(skillDetails) do
       equipment.skills:insert('#', skill.skill)
       equipment.skill_levels:insert('#', skill.level)
@@ -303,12 +324,12 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     end
     arenaSpawn.creature_cnt:erase(0)
 
-    arenaSpawn.filter = oldSpawnFilter
-    arenaSpawn.type = oldSpawnType
-    arenaSpawn.interaction = oldInteractionEffect
-    arenaSpawn.tame = oldSpawnTame
+    if arenaSpawn.filter ~= nil then arenaSpawn.filter = oldSpawnFilter end
+    if arenaSpawn.type ~= nil then arenaSpawn.type = oldSpawnType end
+    if arenaSpawn.interaction ~= nil then arenaSpawn.interaction = oldInteractionEffect end
+    if arenaSpawn.tame ~= nil then arenaSpawn.tame = oldSpawnTame end
 
-    if equipDetails then
+    if equipDetails and hasLegacyEquipmentVectors then
       equipment.item_types:resize(0)
       equipment.item_subtypes:resize(0)
       equipment.item_materials.mat_type:resize(0)
@@ -316,31 +337,35 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
       equipment.item_counts:resize(0)
     end
 
-    if skillDetails then
+    if skillDetails and hasSkillVectors then
       equipment.skills:resize(0)
       equipment.skill_levels:resize(0)
     end
 
-    for _,i in pairs(old_item_types) do
-      equipment.item_types:insert('#',i)
+    if hasLegacyEquipmentVectors then
+      for _,i in pairs(old_item_types) do
+        equipment.item_types:insert('#',i)
+      end
+      for _,i in pairs(old_item_subtypes) do
+        equipment.item_subtypes:insert('#',i)
+      end
+      for _,i in pairs(old_item_mat_types) do
+        equipment.item_materials.mat_type:insert('#',i)
+      end
+      for _,i in pairs(old_item_mat_indexes) do
+        equipment.item_materials.mat_index:insert('#',i)
+      end
+      for _,i in pairs(old_item_counts) do
+        equipment.item_counts:insert('#',i)
+      end
     end
-    for _,i in pairs(old_item_subtypes) do
-      equipment.item_subtypes:insert('#',i)
-    end
-    for _,i in pairs(old_item_mat_types) do
-      equipment.item_materials.mat_type:insert('#',i)
-    end
-    for _,i in pairs(old_item_mat_indexes) do
-      equipment.item_materials.mat_index:insert('#',i)
-    end
-    for _,i in pairs(old_item_counts) do
-      equipment.item_counts:insert('#',i)
-    end
-    for _,i in ipairs(old_skills) do
-      equipment.skills:insert('#',i)
-    end
-    for _,i in ipairs(old_skill_levels) do
-      equipment.skill_levels:insert('#',i)
+    if hasSkillVectors then
+      for _,i in ipairs(old_skills) do
+        equipment.skills:insert('#',i)
+      end
+      for _,i in ipairs(old_skill_levels) do
+        equipment.skill_levels:insert('#',i)
+      end
     end
   end
 
@@ -1074,7 +1099,6 @@ local validArgs = utils.invert({
   'name',
   'nick',
   'location',
-  'cursor',
   'age',
   'setUnitToFort', -- added by amostubal to get past an issue with \\LOCAL
   'quantity',
@@ -1102,30 +1126,10 @@ if not args.race then
   qerror('Specify a race for the new unit.')
 end
 
-local function getSpawnPosition(args)
-  local cursor = df.global.cursor
-  local cursorPos = {x = cursor.x, y = cursor.y, z = cursor.z}
-
-  if args.cursor then
-    if dfhack.maps.isValidTilePos(cursorPos) then
-      return cursorPos
-    end
-    qerror('Invalid keyboard cursor position! Move the keyboard cursor to a valid tile first.')
-  end
-
-  if args.location then
-    return {x = tonumber(args.location[1]), y = tonumber(args.location[2]), z = tonumber(args.location[3])}
-  end
-
-  if dfhack.maps.isValidTilePos(cursorPos) then
-    return cursorPos
-  end
-
-  qerror('Location not specified! Use -location x y z, or use -cursor/place the keyboard cursor over a valid tile.')
+if not args.location then
+  qerror('Location not specified!')
 end
-
-local pos = getSpawnPosition(args)
-
+local pos = {x = tonumber(args.location[1]), y = tonumber(args.location[2]), z = tonumber(args.location[3])}
 if args.locationType and not args.locationRange then
   qerror("-locationType cannot be used without -locationRange!")
 end
