@@ -331,6 +331,24 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
     end
   end
 
+  local function openArenaCreatureMenu(screen)
+    local keyCandidates = {
+      'D_LOOK_ARENA_CREATURE',
+      'D_LOOK_ARENA_UNIT',
+      'D_LOOK_CREATURE',
+      'D_LOOK_UNIT',
+    }
+    for _, key in ipairs(keyCandidates) do
+      local ok = dfhack.pcall(function()
+        gui.simulateInput(screen, key)
+      end)
+      if ok then
+        return
+      end
+    end
+    qerror('Unable to open arena creature interface: no compatible interface keycode found for this DF/DFHack build.')
+  end
+
   local createdUnits = {}
   for n = 1, spawnNumber do -- loop here to avoid having to handle spawn data each time when creating multiple units
     if not caste_id then -- choose a random caste ID each time
@@ -358,7 +376,7 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
       end
     end
 
-    gui.simulateInput(dwarfmodeScreen, 'D_LOOK_ARENA_CREATURE') -- open the arena spawning menu
+    openArenaCreatureMenu(dwarfmodeScreen) -- open the arena spawning menu
     local spawnScreen = dfhack.gui.getCurViewscreen() -- df.viewscreen_layer_arena_creaturest
     gui.simulateInput(spawnScreen, 'SELECT') -- create the selected creature
 
