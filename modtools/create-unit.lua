@@ -1099,6 +1099,7 @@ local validArgs = utils.invert({
   'name',
   'nick',
   'location',
+  'cursor',
   'age',
   'setUnitToFort', -- added by amostubal to get past an issue with \\LOCAL
   'quantity',
@@ -1115,7 +1116,33 @@ if moduleMode then
   return
 end
 
-local args = utils.processArgs({...}, validArgs)
+local function normalizeCliArgs(argv)
+  local out = {}
+  local i = 1
+  while i <= #argv do
+    local arg = argv[i]
+    if arg == '-location' and tonumber(argv[i+1]) and tonumber(argv[i+2]) and tonumber(argv[i+3]) then
+      out[#out+1] = arg
+      out[#out+1] = string.format('%s,%s,%s', argv[i+1], argv[i+2], argv[i+3])
+      i = i + 4
+    elseif arg == '-locationRange' and tonumber(argv[i+1]) and tonumber(argv[i+2]) then
+      out[#out+1] = arg
+      if tonumber(argv[i+3]) then
+        out[#out+1] = string.format('%s,%s,%s', argv[i+1], argv[i+2], argv[i+3])
+        i = i + 4
+      else
+        out[#out+1] = string.format('%s,%s', argv[i+1], argv[i+2])
+        i = i + 3
+      end
+    else
+      out[#out+1] = arg
+      i = i + 1
+    end
+  end
+  return out
+end
+
+local args = utils.processArgs(normalizeCliArgs({...}), validArgs)
 
 if args.help then
   print(dfhack.script_help())
@@ -1126,17 +1153,63 @@ if not args.race then
   qerror('Specify a race for the new unit.')
 end
 
-if not args.location then
-  qerror('Location not specified!')
+local function parseVectorArg(value, name, allowTwo)
+  if not value then return nil end
+
+  if type(value) == 'table' then
+    local x = tonumber(value[1])
+    local y = tonumber(value[2])
+    local z = tonumber(value[3])
+    if not x or not y or (not allowTwo and not z) then
+      qerror(('Invalid %s. Expected %s.'):format(name, allowTwo and 'x y [z]' or 'x y z'))
+    end
+    return {x=x, y=y, z=z}
+  end
+
+  local parts = {}
+  for part in tostring(value):gmatch('[^,]+') do
+    parts[#parts+1] = part
+  end
+  local x = tonumber(parts[1])
+  local y = tonumber(parts[2])
+  local z = tonumber(parts[3])
+  if not x or not y or (not allowTwo and not z) then
+    qerror(('Invalid %s "%s". Expected %s.'):format(name, tostring(value), allowTwo and 'x,y[,z] or x y [z]' or 'x,y,z or x y z'))
+  end
+  return {x=x, y=y, z=z}
 end
-local pos = {x = tonumber(args.location[1]), y = tonumber(args.location[2]), z = tonumber(args.location[3])}
+
+local function getSpawnPosition(args)
+  local cursor = df.global.cursor
+  local cursorPos = {x = cursor.x, y = cursor.y, z = cursor.z}
+
+  if args.cursor then
+    if dfhack.maps.isValidTilePos(cursorPos) then
+      return cursorPos
+    end
+    qerror('Invalid keyboard cursor position! Move the cursor to a valid tile first.')
+  end
+
+  if args.location then
+    return parseVectorArg(args.location, 'location', false)
+  end
+
+  if dfhack.maps.isValidTilePos(cursorPos) then
+    return cursorPos
+  end
+
+  qerror('Location not specified! Use -location x y z or place the keyboard cursor on a valid tile.')
+end
+
+local pos = getSpawnPosition(args)
 if args.locationType and not args.locationRange then
   qerror("-locationType cannot be used without -locationRange!")
 end
 
 local locationRange
 if args.locationRange then
-  locationRange = {offset_x = math.abs(tonumber(args.locationRange[1])), offset_y = math.abs(tonumber(args.locationRange[2])), offset_z = args.locationRange[3] and math.abs(tonumber(args.locationRange[3])) or 0} -- allow offset_z to be omitted
+  local range = parseVectorArg(args.locationRange, 'locationRange', true)
+  locationRange = {offset_x = math.abs(range.x), offset_y = math.abs(range.y), offset_z = range.z and math.abs(range.z) or 0} -- allow offset_z to be omitted
 end
 
 local isFortressMode = dfhack.world.isFortressMode()
