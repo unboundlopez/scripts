@@ -1,8 +1,8 @@
 -- Spawn units in fortress mode with a custom prompt-driven interface.
--- Delegates spawning to modtools/create-unit (Steam DFHack source of truth).
+-- Does not use modtools/create-unit.lua.
 
-local create_unit = reqscript('modtools/create-unit')
 local dialogs = require('gui.dialogs')
+local gui = require('gui')
 local guidm = require('gui.dwarfmode')
 local utils = require('utils')
 
@@ -14,6 +14,10 @@ local validArgs = utils.invert({
     'domesticate',
     'help',
 })
+
+local SpawnRelayScreen = defclass(SpawnRelayScreen, gui.ZScreen)
+SpawnRelayScreen.ATTRS {focus_path='spawn-unit/relay'}
+function SpawnRelayScreen:onRenderBody() end
 
 local function require_fortress_mode()
     if not dfhack.world.isFortressMode() then
@@ -37,64 +41,199 @@ local function parse_positive_int(label, value)
     return num
 end
 
-local function get_creature_raw_by_id(creature_id)
-    for _, creature in ipairs(df.global.world.raws.creatures.all) do
+local function get_creature_raw_and_idx_by_id(creature_id)
+    for idx, creature in ipairs(df.global.world.raws.creatures.all) do
         if creature.creature_id == creature_id then
-            return creature
+            return creature, idx
         end
     end
     qerror('Invalid race: ' .. tostring(creature_id))
 end
 
-local function validate_race_and_caste(race_id, caste_id)
-    local creature = get_creature_raw_by_id(race_id)
-    for _, caste in ipairs(creature.caste) do
+local function get_caste_idx_by_id(creature, caste_id)
+    for idx, caste in ipairs(creature.caste) do
         if caste.caste_id == caste_id then
-            return
+            return idx
         end
     end
-    qerror(('Invalid caste for %s: %s'):format(race_id, tostring(caste_id)))
+    qerror(('Invalid caste for %s: %s'):format(creature.creature_id, tostring(caste_id)))
+end
+
+local function set_unit_nickname(unit, nick)
+    if nick and nick ~= '' then
+        dfhack.units.setNickname(unit, nick)
+    end
+end
+
+local function set_unit_domesticated(unit)
+    unit.flags1.tame = true
+end
+
+local function init_arena_creature_lists()
+    local arena = df.global.world.arena
+    local arena_unit = df.global.game.main_interface.arena_unit
+
+    arena.race:resize(0)
+    arena.caste:resize(0)
+    arena.creature_cnt:resize(0)
+    arena.last_race = -1
+    arena.last_caste = -1
+
+    arena_unit.race = 0
+    arena_unit.caste = 0
+    arena_unit.races_filtered:resize(0)
+    arena_unit.races_all:resize(0)
+    arena_unit.castes_filtered:resize(0)
+    arena_unit.castes_all:resize(0)
+    arena_unit.editing_filter = false
+
+    for race_idx, raw in ipairs(df.global.world.raws.creatures.all) do
+        arena.creature_cnt:insert('#', 0)
+        for caste_idx in ipairs(raw.caste) do
+            arena.race:insert('#', race_idx)
+            arena.caste:insert('#', caste_idx)
+        end
+    end
+end
+
+local function get_arena_entry_idx(race_idx, caste_idx)
+    local arena = df.global.world.arena
+    for idx = 0, #arena.race - 1 do
+        if arena.race[idx] == race_idx and arena.caste[idx] == caste_idx then
+            return idx
+        end
+    end
+    return nil
+end
+
+local function save_state()
+    local popups = {}
+    for _, popup in pairs(df.global.world.status.popups) do
+        table.insert(popups, popup)
+    end
+    return {
+        gamemode=df.global.gamemode,
+        gametype=df.global.gametype,
+        mode=df.global.plotinfo.main.mode,
+        cursor=copyall(df.global.cursor),
+        view={x=df.global.window_x, y=df.global.window_y, z=df.global.window_z},
+        popups=popups,
+    }
+end
+
+local function restore_state(state)
+    df.global.window_x = state.view.x
+    df.global.window_y = state.view.y
+    df.global.window_z = state.view.z
+    df.global.cursor:assign(state.cursor)
+    df.global.gamemode = state.gamemode
+    df.global.gametype = state.gametype
+    df.global.plotinfo.main.mode = state.mode
+    df.global.world.status.popups:resize(0)
+    for _, popup in ipairs(state.popups) do
+        df.global.world.status.popups:insert('#', popup)
+    end
+end
+
+local function spawn_one(relay, entry_idx, race_idx, caste_idx, pos)
+    local mi = df.global.game.main_interface
+    local arena = df.global.world.arena
+
+    df.global.cursor.x = pos.x
+    df.global.cursor.y = pos.y
+    df.global.cursor.z = pos.z
+
+    arena.last_race = race_idx
+    arena.last_caste = caste_idx
+    mi.arena_unit.race = entry_idx
+    mi.arena_unit.caste = 0
+    mi.arena_unit.open = false
+    mi.bottom_mode_selected = -1
+
+    local before = df.global.unit_next_id
+
+    relay:sendInputToParent{ARENA_CREATE_CREATURE=true}
+
+    if not mi.arena_unit.open and mi.bottom_mode_selected == -1 then
+        return nil, 'arena spawn panel did not open'
+    end
+
+    relay:sendInputToParent{SELECT=true}
+
+    if df.global.unit_next_id <= before then
+        -- fallback key route
+        local scr = dfhack.gui.getDFViewscreen(true)
+        pcall(function() gui.simulateInput(scr, 'SELECT') end)
+    end
+
+    if mi.arena_unit.open then
+        relay:sendInputToParent{LEAVESCREEN=true}
+    end
+
+    if df.global.unit_next_id <= before then
+        return nil, 'unit_next_id did not increase after SELECT'
+    end
+
+    return df.unit.find(df.global.unit_next_id - 1), nil
 end
 
 local function do_spawn(opts)
     require_fortress_mode()
     local pos = get_cursor_pos()
-
     local count = parse_positive_int('count', opts.count or 1)
-    validate_race_and_caste(opts.race, opts.caste)
 
-    local ok, units_or_err = pcall(function()
-        return create_unit.createUnit(
-            opts.race,
-            opts.caste,
-            pos,
-            nil,
-            nil,
-            nil,
-            opts.domesticate,
-            nil,
-            nil,
-            nil,
-            opts.nick,
-            nil,
-            count
-        )
+    local creature, race_idx = get_creature_raw_and_idx_by_id(opts.race)
+    local caste_idx = get_caste_idx_by_id(creature, opts.caste)
+
+    local state = save_state()
+    local relay = SpawnRelayScreen{}:show()
+
+    local ok, err = pcall(function()
+        df.global.world.status.popups:resize(0)
+        df.global.gamemode = df.game_mode.DWARF
+        df.global.gametype = df.game_type.DWARF_ARENA
+        df.global.plotinfo.main.mode = df.ui_sidebar_mode.LookAround
+
+        init_arena_creature_lists()
+        local entry_idx = get_arena_entry_idx(race_idx, caste_idx)
+        if not entry_idx then
+            error('Could not map race/caste to arena entry index')
+        end
+
+        local failed = 0
+        local first_error
+        local created = {}
+
+        for _ = 1, count do
+            local unit, unit_err = spawn_one(relay, entry_idx, race_idx, caste_idx, pos)
+            if not unit then
+                failed = failed + 1
+                first_error = first_error or unit_err
+            else
+                if opts.domesticate then set_unit_domesticated(unit) end
+                set_unit_nickname(unit, opts.nick)
+                table.insert(created, unit)
+            end
+        end
+
+        if failed > 0 then
+            error(('Spawn failed for %d unit(s): %s'):format(failed, tostring(first_error)))
+        end
+
+        print(string.format('Spawned %d %s/%s unit(s) at (%d, %d, %d).',
+            #created, opts.race, opts.caste, pos.x, pos.y, pos.z))
     end)
+
+    relay:dismiss()
+    restore_state(state)
 
     if not ok then
         qerror(table.concat({
-            ('Spawn failed for %s/%s at (%d, %d, %d).'):format(
-                tostring(opts.race), tostring(opts.caste), pos.x, pos.y, pos.z),
-            'Delegated to modtools/create-unit and it returned an error:',
-            tostring(units_or_err),
-            'If this references arena internals, your local Steam modtools/create-unit may be out of sync.'
+            ('Spawn failed for %s/%s at (%d, %d, %d).'):format(opts.race, opts.caste, pos.x, pos.y, pos.z),
+            tostring(err),
+            'This script does not use modtools/create-unit.lua.'
         }, '\n'))
     end
-
-    local units = units_or_err or {}
-    print(string.format('Spawned %d %s/%s unit(s) at (%d, %d, %d).',
-        #units, opts.race, opts.caste, pos.x, pos.y, pos.z))
-    return units
 end
 
 local function get_creature_choices()
