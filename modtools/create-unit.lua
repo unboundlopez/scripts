@@ -161,23 +161,36 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   local cursor = copyall(df.global.cursor)
 
   local isArena = dfhack.world.isArena()
-  local arenaSpawn = df.global.world.arena_spawn
+  local arenaSpawn = df.global.world.arena_spawn or df.global.world.arena
+  if not arenaSpawn then
+    qerror('Arena spawn state not available in this DFHack build.')
+  end
 
   local oldSpawnType
   local oldSpawnFilter
-  oldSpawnType = arenaSpawn.type
-  arenaSpawn.type = 0 -- selects the creature at index 0 when the arena spawn screen is produced
-  oldSpawnFilter = arenaSpawn.filter
-  arenaSpawn.filter = "" -- clear filter to prevent it from messing with the selection
+  if arenaSpawn.type ~= nil then
+    oldSpawnType = arenaSpawn.type
+    arenaSpawn.type = 0 -- selects the creature at index 0 when the arena spawn screen is produced
+  end
+  if arenaSpawn.filter ~= nil then
+    oldSpawnFilter = arenaSpawn.filter
+    arenaSpawn.filter = "" -- clear filter to prevent it from messing with the selection
+  end
 
 -- Clear arena spawn data to avoid interference:
 
   local oldInteractionEffect
-  oldInteractionEffect = arenaSpawn.interaction
-  arenaSpawn.interaction = -1
+  if arenaSpawn.interaction ~= nil then
+    oldInteractionEffect = arenaSpawn.interaction
+    arenaSpawn.interaction = -1
+  end
   local oldSpawnTame
-  oldSpawnTame = arenaSpawn.tame
-  arenaSpawn.tame = df.world.T_arena_spawn.T_tame.NotTame -- prevent interference by the tame/mountable setting (which isn't particularly useful as it only appears to set unit.flags1.tame)
+  if arenaSpawn.tame ~= nil then
+    oldSpawnTame = arenaSpawn.tame
+    if df.world and df.world.T_arena_spawn and df.world.T_arena_spawn.T_tame then
+      arenaSpawn.tame = df.world.T_arena_spawn.T_tame.NotTame -- prevent interference by the tame/mountable setting
+    end
+  end
 
   local equipment = arenaSpawn.equipment
 
@@ -290,9 +303,22 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
       end
     end
 
-    gui.simulateInput(dwarfmodeScreen, 'D_LOOK_ARENA_CREATURE') -- open the arena spawning menu
+    local spawnOpen = false
+    for _, key in ipairs({'ARENA_CREATE_CREATURE', 'D_LOOK_ARENA_CREATURE'}) do
+      local ok = pcall(function() gui.simulateInput(dwarfmodeScreen, key) end)
+      if ok then
+        spawnOpen = true
+        break
+      end
+    end
+    if not spawnOpen then
+      break
+    end
     local spawnScreen = dfhack.gui.getCurViewscreen() -- df.viewscreen_layer_arena_creaturest
-    gui.simulateInput(spawnScreen, 'SELECT') -- create the selected creature
+    local selected = pcall(function() gui.simulateInput(spawnScreen, 'SELECT') end)
+    if not selected then
+      pcall(function() gui.simulateInput(spawnScreen, {SELECT=true}) end)
+    end
 
     if not caste_id then
       arenaSpawn.caste:erase(0)
@@ -318,10 +344,10 @@ function createUnitInner(race_id, caste_id, caste_id_choices, pos, locationChoic
   end
   arenaSpawn.creature_cnt:erase(0)
 
-  arenaSpawn.filter = oldSpawnFilter
-  arenaSpawn.type = oldSpawnType
-  arenaSpawn.interaction = oldInteractionEffect
-  arenaSpawn.tame = oldSpawnTame
+  if oldSpawnFilter ~= nil then arenaSpawn.filter = oldSpawnFilter end
+  if oldSpawnType ~= nil then arenaSpawn.type = oldSpawnType end
+  if oldInteractionEffect ~= nil then arenaSpawn.interaction = oldInteractionEffect end
+  if oldSpawnTame ~= nil then arenaSpawn.tame = oldSpawnTame end
 
   if equipDetails then
     equipment.item_types:resize(0)
