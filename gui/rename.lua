@@ -536,7 +536,6 @@ function Rename:init(info)
                         widgets.EditField{
                             view_id='search',
                             frame={t=0, l=22},
-                            key='CUSTOM_ALT_S',
                             label_text='Search: ',
                             -- ignore_keys={'SECONDSCROLL_DOWN', 'SECONDSCROLL_UP'}
                             ignore_keys={'STRING_A043', 'STRING_A045'},
