@@ -4,6 +4,8 @@ local gui = require('gui')
 local overlay = require('plugins.overlay')
 local widgets = require('gui.widgets')
 
+local GLOBAL_KEY = 'world-gen-detailed-mode-search-engine'
+
 local function to_search_text(text)
     return dfhack.toSearchNormalized((text or ''):lower())
 end
@@ -13,12 +15,9 @@ local function safe_get(obj, key)
     return ok and val or nil
 end
 
-local function set_first_existing_field(obj, fields, value)
-    for _, field in ipairs(fields) do
-        local ok = pcall(function() obj[field] = value end)
-        if ok then return true end
-    end
-    return false
+local function get_parms_vec()
+    local worldgen = safe_get(df.global.world, 'worldgen')
+    return safe_get(worldgen, 'worldgen_parms')
 end
 
 local function get_selected_index(vs)
@@ -30,98 +29,126 @@ local function get_selected_index(vs)
     end
 end
 
-local function get_entries()
-    local out = {}
+local function set_selected_index(vs, value)
+    for _, field in ipairs{'sel_idx', 'sel_detail', 'sel_detail_idx', 'cursor', 'cursor_idx'} do
+        local ok = pcall(function() vs[field] = value end)
+        if ok then return true end
+    end
+    return false
+end
 
-    -- Steam DFHack source of truth: advanced worldgen parameter labels come
-    -- from worldgen_parms.
-    local worldgen = safe_get(df.global.world, 'worldgen')
-    local parms = safe_get(worldgen, 'worldgen_parms')
-    if not parms then return out end
+local saved_original_parms = nil
 
-    for idx, parm in ipairs(parms) do
-        local name = safe_get(parm, 'name')
-        if name and #name > 0 then
-            table.insert(out, {
-                text=name,
-                search_key=to_search_text(name),
-                data={idx=idx-1}, -- typically aligns with 0-based viewscreen cursor fields
-            })
-        end
+local function ensure_saved_original_parms()
+    if saved_original_parms then return true end
+    local parms = get_parms_vec()
+    if not parms then return false end
+
+    saved_original_parms = {}
+    for _, parm in ipairs(parms) do
+        table.insert(saved_original_parms, parm)
+    end
+    return true
+end
+
+local function repopulate_parms(list)
+    local parms = get_parms_vec()
+    if not parms then return end
+
+    parms:resize(0)
+    for _, parm in ipairs(list) do
+        parms:insert('#', parm)
+    end
+end
+
+local function restore_original_parms()
+    if not saved_original_parms then return end
+    repopulate_parms(saved_original_parms)
+end
+
+local function get_filtered_parms(filter)
+    if not ensure_saved_original_parms() then return {} end
+    if not filter or #filter == 0 then
+        return saved_original_parms
     end
 
+    local out = {}
+    local search = to_search_text(filter)
+    for _, parm in ipairs(saved_original_parms) do
+        local name = safe_get(parm, 'name') or ''
+        if to_search_text(name):find(search, 1, true) then
+            table.insert(out, parm)
+        end
+    end
     return out
 end
 
 WorldGenDetailedModeSearchEngineOverlay = defclass(WorldGenDetailedModeSearchEngineOverlay, overlay.OverlayWidget)
 WorldGenDetailedModeSearchEngineOverlay.ATTRS {
-    desc='Adds an Alt+S search box for filtering advanced worldgen parameter names.',
+    desc='Adds an Alt+S filter box that filters the native advanced worldgen parameter list.',
     default_enabled=true,
     default_pos={x=2, y=2},
-    frame={w=52, h=14},
+    frame={w=56, h=3},
     frame_style=gui.MEDIUM_FRAME,
     viewscreens='new_region/Advanced',
 }
 
 function WorldGenDetailedModeSearchEngineOverlay:init()
     self:addviews{
-        widgets.Label{
-            frame={t=0, l=0},
-            text='Detailed mode search',
-            text_pen=COLOR_CYAN,
-        },
         widgets.EditField{
             view_id='search',
-            frame={t=1, l=0, r=0},
+            frame={t=0, l=0, r=0},
             key='CUSTOM_ALT_S',
-            label_text='Search: ',
+            label_text='Filter vanilla list: ',
+            on_change=self:callback('on_filter_changed'),
         },
-        widgets.FilteredList{
-            view_id='list',
-            frame={t=3, l=0, r=0, b=0},
-            not_found_label='No matching worldgen parameters',
-            on_submit=self:callback('jump_to_selected'),
+        widgets.Label{
+            view_id='status',
+            frame={t=1, l=0, r=0},
+            text={{text=function() return self.status_text or '' end, pen=COLOR_CYAN}},
         },
     }
 
-    -- replace FilteredList built-in edit with our dedicated search field
-    self.subviews.list.list.frame.t = 0
-    self.subviews.list.edit.visible = false
-    self.subviews.list.edit = self.subviews.search
-    self.subviews.search.on_change = self.subviews.list:callback('onFilterChange')
-
-    self.subviews.list:setChoices(get_entries())
+    self:on_filter_changed('')
 end
 
-function WorldGenDetailedModeSearchEngineOverlay:jump_to_selected(_, choice)
-    if not choice then return end
-
+function WorldGenDetailedModeSearchEngineOverlay:on_filter_changed(text)
     local vs = dfhack.gui.getViewscreenByType(df.viewscreen_new_regionst, 0)
     if not vs then return end
 
-    local _, current_idx = get_selected_index(vs)
-    local target_idx = choice.data.idx
+    local _, selected = get_selected_index(vs)
+    local filtered = get_filtered_parms(text)
+    repopulate_parms(filtered)
 
-    -- Try direct assignment first.
-    if set_first_existing_field(vs,
-            {'sel_idx', 'sel_detail', 'sel_detail_idx', 'cursor', 'cursor_idx'},
-            target_idx) then
-        return
-    end
+    local count = #filtered
+    local total = saved_original_parms and #saved_original_parms or count
+    self.status_text = ('Showing %d/%d parameters'):format(count, total)
 
-    -- Fallback: nudge via common delta-like fields if present.
-    if type(current_idx) == 'number' then
-        local delta = target_idx - current_idx
-        set_first_existing_field(vs, {'scroll_delta', 'scroll_step'}, delta)
+    if count == 0 then
+        set_selected_index(vs, 0)
+    elseif type(selected) == 'number' then
+        set_selected_index(vs, math.min(selected, count-1))
     end
+end
+
+function WorldGenDetailedModeSearchEngineOverlay:onDestroy()
+    restore_original_parms()
 end
 
 OVERLAY_WIDGETS = {
     world_gen_detailed_mode_search_engine=WorldGenDetailedModeSearchEngineOverlay,
 }
 
+dfhack.onStateChange[GLOBAL_KEY] = function(sc)
+    if sc ~= SC_VIEWSCREEN_CHANGED then return end
+    local focus = dfhack.gui.getCurFocus(true) or ''
+    if not tostring(focus):find('^new_region/Advanced') then
+        restore_original_parms()
+    end
+end
+
 if dfhack_flags.module then
     return
 end
 
-print('world-gen-detailed-mode-search-engine loaded. Open new_region/Advanced and press Alt+S to focus search.')
+print('world-gen-detailed-mode-search-engine loaded. Open new_region/Advanced and press Alt+S.')
