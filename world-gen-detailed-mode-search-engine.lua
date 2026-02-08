@@ -33,8 +33,8 @@ end
 local function get_entries()
     local out = {}
 
-    -- Steam DFHack source of truth: worldgen parameter labels are taken from worldgen_parms
-    -- and are what users see in advanced worldgen tuning.
+    -- Steam DFHack source of truth: advanced worldgen parameter labels come
+    -- from worldgen_parms.
     local worldgen = safe_get(df.global.world, 'worldgen')
     local parms = safe_get(worldgen, 'worldgen_parms')
     if not parms then return out end
@@ -45,7 +45,7 @@ local function get_entries()
             table.insert(out, {
                 text=name,
                 search_key=to_search_text(name),
-                data={idx=idx-1}, -- C++ vectors are generally 0-indexed in UI state fields
+                data={idx=idx-1}, -- typically aligns with 0-based viewscreen cursor fields
             })
         end
     end
@@ -64,8 +64,6 @@ WorldGenDetailedModeSearchEngineOverlay.ATTRS {
 }
 
 function WorldGenDetailedModeSearchEngineOverlay:init()
-    self.entries = get_entries()
-
     self:addviews{
         widgets.Label{
             frame={t=0, l=0},
@@ -77,20 +75,22 @@ function WorldGenDetailedModeSearchEngineOverlay:init()
             frame={t=1, l=0, r=0},
             key='CUSTOM_ALT_S',
             label_text='Search: ',
-            on_change=self:callback('on_search_changed'),
         },
         widgets.FilteredList{
             view_id='list',
             frame={t=3, l=0, r=0, b=0},
             not_found_label='No matching worldgen parameters',
             on_submit=self:callback('jump_to_selected'),
-            choices=self.entries,
         },
     }
-end
 
-function WorldGenDetailedModeSearchEngineOverlay:on_search_changed(text)
-    self.subviews.list:setFilter(text)
+    -- replace FilteredList built-in edit with our dedicated search field
+    self.subviews.list.list.frame.t = 0
+    self.subviews.list.edit.visible = false
+    self.subviews.list.edit = self.subviews.search
+    self.subviews.search.on_change = self.subviews.list:callback('onFilterChange')
+
+    self.subviews.list:setChoices(get_entries())
 end
 
 function WorldGenDetailedModeSearchEngineOverlay:jump_to_selected(_, choice)
@@ -109,7 +109,7 @@ function WorldGenDetailedModeSearchEngineOverlay:jump_to_selected(_, choice)
         return
     end
 
-    -- Fallback: nudge via the common delta field if present.
+    -- Fallback: nudge via common delta-like fields if present.
     if type(current_idx) == 'number' then
         local delta = target_idx - current_idx
         set_first_existing_field(vs, {'scroll_delta', 'scroll_step'}, delta)
